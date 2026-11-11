@@ -22,7 +22,7 @@
 17. 新闻列表页可提取正文、列表条目和 PDF 年报链接；
 18. 检测到 PDF 年报时提示用户切换到 Tab 1 上传分析；
 19. 内网、本机、元数据地址和非标准端口一律拒绝抓取；
-20. 财务报告可以导出 PDF，中文使用 Windows 字体且不乱码；
+20. 财务报告可以导出 PDF，中文使用项目内置字体且不乱码；
 21. HTML 正文由 lxml 提取并删除导航/广告，动态短页面会尝试 Playwright；
 22. 直接 PDF 链接由 pdfplumber 解析成 Markdown，解析失败时保留原搜索链接；
 23. 股票代码支持常见前后缀，只允许沪深 A 股，非巨潮地址不能下载；
@@ -325,7 +325,7 @@ def make_test_pdf_bytes() -> bytes | None:
                       调用方应跳过相关测试。
 
     说明：
-        - 这里复用项目已有的 fpdf2 和 Windows 中文字体；
+        - 这里复用项目已有的 fpdf2 和项目内置的 Noto Sans SC 中文字体；
         - 表格使用 fpdf2 自带的 table() 绘制，pdfplumber 可以通过表格线识别；
         - 不写临时文件，PDF 只保存在内存中。
     """
@@ -334,15 +334,17 @@ def make_test_pdf_bytes() -> bytes | None:
     except ImportError:
         return None
 
+    # 字体随项目一起提交，放在 backend/fonts 目录。
+    # 用 __file__ 定位，避免依赖当前工作目录或操作系统字体。
     font_path = (
-        Path(os.environ.get("WINDIR", r"C:\Windows"))
-        / "Fonts"
-        / "msyh.ttc"
+        Path(__file__).resolve().parent
+        / "fonts"
+        / "NotoSansSC-Regular.ttf"
     )
     if not font_path.exists():
         return None
 
-    # .ttc 字体在嵌入时会产生 MERG 警告，不影响 PDF 内容。
+    # 字体子集化时可能产生底层警告，不影响 PDF 内容。
     # 测试输出中不需要显示这些底层警告。
     logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
 
@@ -2743,7 +2745,7 @@ class PdfGeneratorTests(unittest.TestCase):
 
     说明：
     这些测试不需要网络，也不调用 DeepSeek。
-    如果电脑没有安装 PDF 依赖、绘图依赖或没有 Windows 中文字体，
+    如果电脑没有安装 PDF 依赖或绘图依赖，
     测试会自动跳过，不会把环境问题误判成代码问题。
     """
 
@@ -2773,7 +2775,7 @@ class PdfGeneratorTests(unittest.TestCase):
         try:
             pdf_bytes = generate_pdf(markdown, "测试公司")
         except PdfGenerationError as exc:
-            self.skipTest(f"本机缺少可用的 Windows 中文字体：{exc}")
+            self.skipTest(f"项目内置中文字体不可用：{exc}")
 
         # 合法 PDF 必须以 %PDF 开头。
         self.assertTrue(pdf_bytes.startswith(b"%PDF"))
@@ -2843,7 +2845,7 @@ class PdfGeneratorTests(unittest.TestCase):
         try:
             pdf_bytes = generate_pdf(markdown, "缩进测试公司")
         except PdfGenerationError as exc:
-            self.skipTest(f"本机缺少可用的 Windows 中文字体：{exc}")
+            self.skipTest(f"项目内置中文字体不可用：{exc}")
 
         reader = PdfReader(io.BytesIO(pdf_bytes))
         text = "\n".join(

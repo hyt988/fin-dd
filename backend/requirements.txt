@@ -9,7 +9,7 @@ openai>=1.0.0
 pypdf>=4.0.0
 
 # PDF 生成库：把财务分析 Markdown 排版成可下载的 PDF，
-# 并支持嵌入 Windows 自带的微软雅黑、宋体等中文字体，避免中文乱码。
+# 并支持嵌入项目内置的 Noto Sans SC 中文字体（见 fonts 目录），避免中文乱码。
 fpdf2>=2.7.0
 
 # 环境变量加载工具：启动时读取 .env 文件中的 API Key

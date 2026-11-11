@@ -5,7 +5,8 @@ PDF 导出工具（Markdown 正文 + 表格图片版）。
 - 把业务、法务、财务专家生成的 Markdown 报告转换成 PDF 字节流；
 - 正文继续按段落排版，Markdown 表格先画成高分辨率三线表 PNG，
   再嵌入 PDF，避免 fpdf2 把 ``<table>`` 当成普通文字而出现乱码；
-- 使用 Windows 自带的中文字体，避免中文显示成方块；
+- 使用随项目一起发布的 Noto Sans SC（思源黑体开源版）中文字体，
+  避免中文显示成方块；
 - 只在内存和系统临时目录中处理，不把财务资料永久写到磁盘，
   也不读取、打印或写入任何 API Key。
 
@@ -22,7 +23,6 @@ PDF 导出工具（Markdown 正文 + 表格图片版）。
 
 import csv
 import logging
-import os
 import re
 import shutil
 import tempfile
@@ -32,8 +32,8 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-# 微软雅黑等 .ttc 字体集合里带有 fpdf2 不需要的 MERG 表。
-# fontTools 在嵌入字体会打印 “MERG NOT subset” 警告，但不影响 PDF 内容。
+# fontTools 在嵌入字体、提取字体子集时可能打印底层警告
+# （例如某些字体表无法子集化），这些警告不影响 PDF 内容。
 # 这里只关闭 fontTools 的这类无关警告，避免 Streamlit 终端被重复提示刷屏。
 logging.getLogger("fontTools.subset").setLevel(logging.ERROR)
 
@@ -51,10 +51,20 @@ class PdfGenerationError(RuntimeError):
     """
 
 
-# Windows 字体目录。
-# 大多数电脑是 C:\\Windows\\Fonts；如果系统装在别的盘，
-# WINDIR 环境变量会指向正确位置。
-_WINDOWS_FONT_DIR = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
+# 项目内置中文字体目录。
+# Path(__file__) 是当前文件 utils/pdf_generator.py 的绝对路径：
+#   .parent         -> utils 目录
+#   .parent.parent  -> backend 根目录
+# 再拼接 fonts，就得到“backend/fonts”。
+# 这样无论程序在 Windows 还是 Linux 云端运行、从哪个目录启动，
+# 都能找到随代码一起部署的字体，不依赖操作系统自带的字体目录。
+_FONTS_DIR = Path(__file__).resolve().parent.parent / "fonts"
+
+# 内置字体的完整路径。
+# 常规体用于正文，粗体用于报告标题和表头；
+# 两个文件都随代码提交到 Git 仓库，部署时会自动带到服务器上。
+_REGULAR_FONT_PATH = _FONTS_DIR / "NotoSansSC-Regular.ttf"
+_BOLD_FONT_PATH = _FONTS_DIR / "NotoSansSC-Bold.ttf"
 
 # 正文默认字号（磅）和行高（毫米）。
 # 10.5 磅适合 A4 阅读；5.8 毫米行高约等于 1.55 倍行距，
@@ -121,53 +131,25 @@ _TABLE_CONTEXT_SPACING_MM = 5.0
 # 中文字体候选列表，按优先级从高到低排列。
 # 每一项是：(fpdf2 内部使用的字体名, 常规字体文件, 粗体文件)。
 #
-# 为什么首选微软雅黑（msyh.ttc）：
-# - 它是 Windows 10/11 自带字体，覆盖常用汉字和标点；
-# - 显示效果比宋体更适合屏幕阅读。
-# 为什么保留宋体、黑体等备用：
-# - 精简版 Windows 或某些系统可能缺少微软雅黑；
-# - 只要有一个字体可用，PDF 就不会出现中文乱码。
+# 现在只使用项目内置的 Noto Sans SC（思源黑体的开源版本）：
+# - 字体文件随代码仓库一起部署，Linux 云端服务器也能直接读取；
+# - 采用 SIL Open Font License 1.1，允许免费商用和随项目分发；
+# - 常规体和粗体分别提供，报告标题、表头可以正常加粗。
+# 保留“候选列表”的结构，是为了以后要换字体时只需在这里追加一项，
+# 不必改动注册字体的逻辑。
 _FONT_CANDIDATES = (
     (
-        "CNYaHei",
-        _WINDOWS_FONT_DIR / "msyh.ttc",
-        _WINDOWS_FONT_DIR / "msyhbd.ttc",
-    ),
-    (
-        "CNSimSun",
-        _WINDOWS_FONT_DIR / "simsun.ttc",
-        _WINDOWS_FONT_DIR / "simsunb.ttf",
-    ),
-    (
-        "CNSimHei",
-        _WINDOWS_FONT_DIR / "simhei.ttf",
-        _WINDOWS_FONT_DIR / "simhei.ttf",
-    ),
-    (
-        "CNKaiTi",
-        _WINDOWS_FONT_DIR / "simkai.ttf",
-        _WINDOWS_FONT_DIR / "simkai.ttf",
-    ),
-    (
-        "CNFangSong",
-        _WINDOWS_FONT_DIR / "simfang.ttf",
-        _WINDOWS_FONT_DIR / "simfang.ttf",
+        "CNNotoSans",
+        _REGULAR_FONT_PATH,
+        _BOLD_FONT_PATH,
     ),
 )
 
 # matplotlib 绘制表格图片时单独查找字体文件。
 # 这里直接给 FontProperties 传文件路径，不依赖系统字体注册，
 # 因此即使 matplotlib 的字体缓存没有刷新，也能正确显示中文。
-_MATPLOTLIB_REGULAR_FONT_CANDIDATES = (
-    _WINDOWS_FONT_DIR / "msyh.ttc",
-    _WINDOWS_FONT_DIR / "simhei.ttf",
-    _WINDOWS_FONT_DIR / "simsun.ttc",
-)
-_MATPLOTLIB_BOLD_FONT_CANDIDATES = (
-    _WINDOWS_FONT_DIR / "msyhbd.ttc",
-    _WINDOWS_FONT_DIR / "simhei.ttf",
-    _WINDOWS_FONT_DIR / "simsun.ttc",
-)
+_MATPLOTLIB_REGULAR_FONT_CANDIDATES = (_REGULAR_FONT_PATH,)
+_MATPLOTLIB_BOLD_FONT_CANDIDATES = (_BOLD_FONT_PATH,)
 
 # Markdown 表格行：整行以 | 开头、以 | 结尾（允许前后有空格）。
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
@@ -215,7 +197,7 @@ class _DueDiligencePDF(FPDF):
     """
 
     # 默认字体名会在生成 PDF 时被实际选中的字体覆盖。
-    cn_font_family: str = "CNYaHei"
+    cn_font_family: str = "CNNotoSans"
 
     def footer(self) -> None:
         """
@@ -234,7 +216,7 @@ class _DueDiligencePDF(FPDF):
 
 def _register_chinese_font(pdf: FPDF) -> str:
     """
-    按优先级尝试注册 Windows 中文字体。
+    按优先级尝试注册项目内置的中文字体。
 
     参数：
         pdf: 已经创建好的 FPDF 对象。
@@ -274,10 +256,13 @@ def _register_chinese_font(pdf: FPDF) -> str:
             continue
 
     # 所有候选都失败时，给出可操作的中文提示。
+    # 这里只提示 fonts 目录和文件名，不暴露服务器的绝对路径，
+    # 也提醒部署时确认字体文件确实随代码一起上传。
     raise PdfGenerationError(
-        "未找到可用的 Windows 中文字体。请确认电脑中存在 "
-        f"{_WINDOWS_FONT_DIR / 'msyh.ttc'}（微软雅黑）或 "
-        f"{_WINDOWS_FONT_DIR / 'simsun.ttc'}（宋体），然后重试。"
+        "未找到项目内置的中文字体文件。请确认 backend/fonts 目录下存在 "
+        f"{_REGULAR_FONT_PATH.name}（常规体）和 "
+        f"{_BOLD_FONT_PATH.name}（粗体），并确认这两个文件已随代码提交、"
+        "部署到服务器后再重试。"
     )
 
 
@@ -855,7 +840,9 @@ def _build_table_image_layout(md_table_str: str) -> dict | None:
             _MATPLOTLIB_REGULAR_FONT_CANDIDATES
         )
         if regular_font_path is None:
-            logger.warning("表格转图片失败：未找到可用的中文字体。")
+            logger.warning(
+                "表格转图片失败：未找到项目内置的中文字体文件。"
+            )
             return None
 
         bold_font_path = (
