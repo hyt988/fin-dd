@@ -1,4 +1,4 @@
-const PDF_API_URL = 'http://127.0.0.1:8000/api/download_pdf';
+const PDF_API_URL = 'https://fin-dd.onrender.com/api/download_pdf';
 
 type DownloadReportPdfParams = {
   reportText: string;

@@ -17,7 +17,7 @@ import { downloadReportPdf } from './lib/pdfDownload';
 import type { SummaryCard } from './lib/report';
 import { normalizeCoreConclusion, normalizeSummaryCards } from './lib/report';
 
-const API_URL = 'http://127.0.0.1:8000/api/analyze';
+const API_URL = 'https://fin-dd.onrender.com/api/analyze';
 
 export default function App() {
   const [companyName, setCompanyName] = useState('');
@@ -165,7 +165,7 @@ export default function App() {
       const message = error instanceof Error ? error.message : '';
       setErrorMsg(
         message === 'Failed to fetch'
-          ? '无法连接后端服务，请确认 FastAPI 已在 http://127.0.0.1:8000 启动。'
+          ? '无法连接后端服务，请稍后重试。'
           : message || '请求失败，请稍后重试。'
       );
     } finally {
@@ -198,7 +198,7 @@ export default function App() {
       const message = error instanceof Error ? error.message : '';
       setPdfError(
         message === 'Failed to fetch'
-          ? '无法连接后端服务，请确认 FastAPI 已在 http://127.0.0.1:8000 启动。'
+          ? '无法连接后端服务，请稍后重试。'
           : message || 'PDF 下载失败，请稍后重试。'
       );
     } finally {
