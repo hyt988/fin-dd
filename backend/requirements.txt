@@ -1,0 +1,71 @@
+# 网页界面框架：负责显示页面并处理用户交互
+streamlit>=1.30.0
+
+# OpenAI 官方 Python SDK：通过兼容 OpenAI 的接口调用 DeepSeek 模型
+openai>=1.0.0
+
+# PDF 文字提取库：用于 Tab 1 上传的本地 PDF（财报、合同等）。
+# 网页搜索抓到的 PDF 由下面的 pdfplumber 负责，两者分工不同。
+pypdf>=4.0.0
+
+# PDF 生成库：把财务分析 Markdown 排版成可下载的 PDF，
+# 并支持嵌入 Windows 自带的微软雅黑、宋体等中文字体，避免中文乱码。
+fpdf2>=2.7.0
+
+# 环境变量加载工具：启动时读取 .env 文件中的 API Key
+python-dotenv>=1.0.0
+
+# 公开网页搜索：使用博查（Bocha）Web Search API，
+# 通过 Python 自带的 urllib 发送 HTTPS 请求，因此不需要额外安装搜索库。
+
+# 中文拼音转换：把公司名转成拼音，用于识别 huawei.com 这类企业官网域名。
+pypinyin>=0.51.0
+
+# HTML 解析库：负责删除网页中的脚本、导航、广告等噪声节点，
+# 再按正文密度挑选真正的文章区域，比单纯按标签取文字更准确。
+lxml>=5.0.0
+
+# 无头浏览器：有些财报官网用 JavaScript 动态加载内容，
+# 普通 HTML 解析只能拿到空壳页面；此时用 Playwright 启动 Chromium
+# 重新渲染，再提取完整正文。
+# 注意：pip 安装后还必须运行一次“python -m playwright install chromium”
+# 下载浏览器内核，否则动态网页渲染会不可用（代码会自动退回普通解析）。
+playwright>=1.40.0
+
+# PDF 解析库：自动读取搜索结果中的 PDF 年报，
+# 把文字和表格转换成 Markdown，交给后续财务分析使用。
+pdfplumber>=0.11.0
+
+# HTML 清理库：PDF 生成前用来删除脚本、图片等不需要的标签，
+# 也作为网页解析的备用工具保留。
+beautifulsoup4>=4.12.0
+
+# 财经数据接口库：通过新浪财经获取近三年资产负债表、利润表和
+# 现金流量表的详细科目，并换算成页面展示用的亿元金额。
+# 注意：AKShare 依赖 pandas 等数据分析库，首次安装体积较大。
+akshare>=1.16.0
+
+# 表格数据解析：PDF 导出时用 pandas.read_csv 把 Markdown 表格
+# 解析成二维表格，再交给 matplotlib 画成三线表图片。
+pandas>=2.0.0
+
+# 表格图片绘制：把 Markdown 表格渲染成高分辨率 PNG，
+# 再嵌入 PDF，避免 fpdf2 把 <table> 当成普通文字而出现乱码。
+matplotlib>=3.7.0
+
+# 后端接口框架：把现有的分析能力包装成 HTTP 接口，供 React 前端调用。
+# 它只负责收请求、调用 orchestrator，再返回 JSON，不包含分析逻辑。
+fastapi>=0.110.0
+
+# ASGI 服务器：负责真正启动 FastAPI 服务并监听端口。
+# 开发时用 --reload 可以在改完 api.py 后自动重启服务。
+uvicorn>=0.27.0
+
+# 表单和文件上传解析：FastAPI 接收 multipart/form-data 时必需。
+# React 前端用 FormData 同时提交 company_name 或 file，就需要这个库。
+python-multipart>=0.0.9
+
+# 请求数据校验：定义 PDF 下载接口接收的 JSON 字段（report_text、company_name）。
+# FastAPI 本身依赖它，这里单独列出，避免以后升级时被意外移除。
+pydantic>=2.0.0
+

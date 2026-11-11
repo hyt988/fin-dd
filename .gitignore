@@ -1,0 +1,28 @@
+# ======= 前端忽略配置 =======
+frontend/project/node_modules/
+frontend/project/dist/
+frontend/project/dist-ssr/
+frontend/project/.env
+frontend/project/.vite/
+frontend/project/*.local
+
+# ======= 后端忽略配置 =======
+backend/.venv/
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.env
+backend/history_reports/
+backend/.claude/
+backend/*.log
+*.sqlite3
+*.log
+
+# ======= 旧 Git 仓库备份（本机保留，不上传） =======
+backend/.git_backup_*/
+
+# ======= 系统及编辑器文件 =======
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
