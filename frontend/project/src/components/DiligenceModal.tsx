@@ -6,12 +6,16 @@ import {
   ArrowRight,
   Building2,
   Download,
+  FileText,
   List,
   Loader2,
   Search,
   Sparkles,
+  Upload,
   X,
 } from 'lucide-react';
+import type { AnalysisInputMode } from '../lib/analyze';
+import { MAX_UPLOAD_BYTES } from '../lib/analyze';
 import { extractTocHeadings, type TocHeading } from '../lib/markdownToc';
 import type { SummaryCard, SummaryCardStatus } from '../lib/report';
 
@@ -36,10 +40,32 @@ const SUMMARY_STATUS_META: Record<
   },
 };
 
+const MAX_UPLOAD_MB = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
+
+const INPUT_MODE_OPTIONS: {
+  value: AnalysisInputMode;
+  label: string;
+  icon: typeof Building2;
+}[] = [
+  { value: 'company', label: '输入公司名称/代码', icon: Building2 },
+  { value: 'file', label: '上传分析资料', icon: Upload },
+];
+
+/** 把字节数转成好读的文件大小，例如 1.2 MB */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 type DiligenceModalProps = {
   open: boolean;
+  inputMode: AnalysisInputMode;
+  onInputModeChange: (mode: AnalysisInputMode) => void;
   companyName: string;
   onCompanyNameChange: (value: string) => void;
+  selectedFile: File | null;
+  onSelectFile: (file: File | null) => void;
   isLoading: boolean;
   reportText: string;
   summaryCards: SummaryCard[];
@@ -55,8 +81,12 @@ type DiligenceModalProps = {
 
 export default function DiligenceModal({
   open,
+  inputMode,
+  onInputModeChange,
   companyName,
   onCompanyNameChange,
+  selectedFile,
+  onSelectFile,
   isLoading,
   reportText,
   summaryCards,
@@ -89,6 +119,8 @@ export default function DiligenceModal({
         : summaryCards.length >= 4
           ? 'sm:grid-cols-2 lg:grid-cols-4'
           : 'sm:grid-cols-3';
+  // 公司模式要求名称非空，文件模式要求已经选好文件
+  const canSubmit = inputMode === 'file' ? Boolean(selectedFile) : Boolean(companyName.trim());
 
   // 弹窗打开时锁定页面滚动，避免背景页面跟着滚动
   useEffect(() => {
@@ -110,12 +142,12 @@ export default function DiligenceModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose]);
 
-  // 打开弹窗后自动聚焦到输入框
+  // 打开弹窗后自动聚焦到输入框（只有公司名称模式才有输入框）
   useEffect(() => {
-    if (!open || isResultView) return;
+    if (!open || isResultView || inputMode !== 'company') return;
     const timer = window.setTimeout(() => inputRef.current?.focus(), 60);
     return () => window.clearTimeout(timer);
-  }, [open, isResultView]);
+  }, [open, isResultView, inputMode]);
 
   // 报告渲染完成后，把目录条目与正文里的标题按顺序绑定锚点
   useEffect(() => {
@@ -408,23 +440,133 @@ export default function DiligenceModal({
             }}
             className="min-h-0 flex-1 overflow-y-auto px-6 py-8 sm:px-10 sm:py-10"
           >
-            <label htmlFor="company-name" className="mb-2.5 block text-sm font-medium text-gray-700">
-              公司名称或股票代码
-            </label>
-            <div className="relative">
-              <Building2 className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
-              <input
-                id="company-name"
-                ref={inputRef}
-                type="text"
-                value={companyName}
-                onChange={(event) => onCompanyNameChange(event.target.value)}
-                placeholder="请输入股票代码或公司名称（如：600519 或 贵州茅台）"
-                disabled={isLoading}
-                autoComplete="off"
-                className="h-16 w-full rounded-xl border-2 border-surface-200 bg-surface-50 pl-12 pr-4 text-lg text-gray-900 transition-all placeholder:text-sm placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/10 disabled:cursor-not-allowed disabled:opacity-60 sm:h-20 sm:text-xl sm:placeholder:text-base"
-              />
+            <div
+              role="radiogroup"
+              aria-label="选择分析方式"
+              className="mb-6 grid grid-cols-2 gap-1 rounded-xl border border-surface-200 bg-surface-100 p-1"
+            >
+              {INPUT_MODE_OPTIONS.map((option) => {
+                const Icon = option.icon;
+                const selected = inputMode === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2.5 text-center text-sm font-medium transition-all focus-within:ring-2 focus-within:ring-primary-500/30 ${
+                      selected
+                        ? 'bg-white text-primary-600 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    } ${isLoading ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="analysis-input-mode"
+                      value={option.value}
+                      checked={selected}
+                      onChange={() => onInputModeChange(option.value)}
+                      disabled={isLoading}
+                      className="sr-only"
+                    />
+                    <Icon className="h-4 w-4" />
+                    {option.label}
+                  </label>
+                );
+              })}
             </div>
+
+            {inputMode === 'company' ? (
+              <>
+                <label
+                  htmlFor="company-name"
+                  className="mb-2.5 block text-sm font-medium text-gray-700"
+                >
+                  公司名称或股票代码
+                </label>
+                <div className="relative">
+                  <Building2 className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                  <input
+                    id="company-name"
+                    ref={inputRef}
+                    type="text"
+                    value={companyName}
+                    onChange={(event) => onCompanyNameChange(event.target.value)}
+                    placeholder="请输入股票代码或公司名称（如：600519 或 贵州茅台）"
+                    disabled={isLoading}
+                    autoComplete="off"
+                    className="h-16 w-full rounded-xl border-2 border-surface-200 bg-surface-50 pl-12 pr-4 text-lg text-gray-900 transition-all placeholder:text-sm placeholder:text-gray-400 focus:border-primary-500 focus:outline-none focus:ring-4 focus:ring-primary-500/10 disabled:cursor-not-allowed disabled:opacity-60 sm:h-20 sm:text-xl sm:placeholder:text-base"
+                  />
+                </div>
+              </>
+            ) : (
+              <div>
+                <p className="mb-2.5 block text-sm font-medium text-gray-700">上传分析资料</p>
+                <input
+                  id="analysis-file"
+                  type="file"
+                  accept=".pdf,.txt,application/pdf,text/plain"
+                  disabled={isLoading}
+                  onChange={(event) => {
+                    onSelectFile(event.target.files?.[0] ?? null);
+                    // 清空 input 的值，方便用户重新选择同一个文件时也能触发变更
+                    event.target.value = '';
+                  }}
+                  className="peer sr-only"
+                />
+
+                {selectedFile ? (
+                  <div className="flex flex-col gap-3 rounded-xl border-2 border-primary-200 bg-primary-50/50 px-4 py-4 sm:flex-row sm:items-center">
+                    <div className="flex min-w-0 flex-1 items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white text-primary-500 shadow-sm">
+                        <FileText className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <p
+                          className="truncate text-sm font-semibold text-gray-800"
+                          title={selectedFile.name}
+                        >
+                          {selectedFile.name}
+                        </p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          已选择 · {formatFileSize(selectedFile.size)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2 sm:pl-2">
+                      <label
+                        htmlFor="analysis-file"
+                        className={`rounded-lg border border-surface-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-colors hover:border-primary-300 hover:text-primary-500 ${
+                          isLoading ? 'pointer-events-none opacity-50' : 'cursor-pointer'
+                        }`}
+                      >
+                        重新选择
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => onSelectFile(null)}
+                        disabled={isLoading}
+                        className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        移除
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="analysis-file"
+                    className="peer-focus-visible:ring-4 peer-focus-visible:ring-primary-500/10 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-surface-300 bg-surface-50 px-6 py-10 text-center transition-all hover:border-primary-400 hover:bg-primary-50/40"
+                  >
+                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-primary-500 shadow-sm">
+                      <Upload className="h-5 w-5" />
+                    </span>
+                    <span className="text-sm font-semibold text-gray-700">
+                      点击选择要分析的资料
+                    </span>
+                    <span className="text-xs leading-relaxed text-gray-400">
+                      支持 PDF、TXT 格式，单个文件不超过 {MAX_UPLOAD_MB} MB
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
 
             {errorMsg && (
               <div
@@ -458,7 +600,7 @@ export default function DiligenceModal({
               </button>
               <button
                 type="submit"
-                disabled={!companyName.trim() || isLoading}
+                disabled={!canSubmit || isLoading}
                 className="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 px-7 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-300 hover:from-primary-600 hover:to-primary-800 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isLoading ? (

@@ -14,12 +14,20 @@ import NotFound from './pages/NotFound';
 import type { HistoryItem } from './lib/history';
 import { HISTORY_LIMIT, HISTORY_STORAGE_KEY, loadHistory, saveHistory } from './lib/history';
 import { downloadReportPdf } from './lib/pdfDownload';
+import type { AnalysisInputMode } from './lib/analyze';
+import {
+  MAX_UPLOAD_BYTES,
+  describeAnalyzeHttpError,
+  isSupportedUploadFile,
+} from './lib/analyze';
 import type { SummaryCard } from './lib/report';
 import { normalizeCoreConclusion, normalizeSummaryCards } from './lib/report';
 
 const API_URL = 'https://fin-dd.onrender.com/api/analyze';
 
 export default function App() {
+  const [inputMode, setInputMode] = useState<AnalysisInputMode>('company');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [companyName, setCompanyName] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [reportText, setReportText] = useState('');
@@ -71,6 +79,8 @@ export default function App() {
     setSummaryCards([]);
     setCoreConclusion('');
     setCompanyName('');
+    setInputMode('company');
+    setSelectedFile(null);
     setErrorMsg('');
     setIsLoading(false);
   };
@@ -90,6 +100,8 @@ export default function App() {
     resetPdfState();
     setIsLoading(false);
     setErrorMsg('');
+    setInputMode('company');
+    setSelectedFile(null);
     setCompanyName(item.companyName);
     setReportText(item.reportText);
     setSummaryCards(item.summaryCards ?? []);
@@ -102,9 +114,50 @@ export default function App() {
     setHistory([]);
   };
 
+  // 切换输入方式时清掉上一条错误提示，避免提示和当前方式对不上
+  const handleInputModeChange = (mode: AnalysisInputMode) => {
+    setInputMode(mode);
+    setErrorMsg('');
+  };
+
+  // 选择文件时先在浏览器里校验格式、空文件和大小，不合格就直接提示，不浪费一次网络请求
+  const handleSelectFile = (file: File | null) => {
+    setErrorMsg('');
+
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
+
+    if (!isSupportedUploadFile(file.name)) {
+      setSelectedFile(null);
+      setErrorMsg('暂不支持这种文件格式，请上传 PDF 或 TXT 文件。');
+      return;
+    }
+
+    if (file.size === 0) {
+      setSelectedFile(null);
+      setErrorMsg('选择的文件是空的，请重新选择。');
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setSelectedFile(null);
+      setErrorMsg('文件过大（超过 100 MB），请压缩或拆分后重新上传。');
+      return;
+    }
+
+    setSelectedFile(file);
+  };
+
   const handleAnalyze = async () => {
+    if (abortRef.current) return;
+
     const name = companyName.trim();
-    if (!name || abortRef.current) return;
+    const file = inputMode === 'file' ? selectedFile : null;
+
+    // 两种方式各自必填：公司名称不能为空，文件模式下必须先选文件
+    if (inputMode === 'file' ? !file : !name) return;
 
     resetPdfState();
     setIsLoading(true);
@@ -117,9 +170,14 @@ export default function App() {
     abortRef.current = controller;
 
     try {
-      // 后端要求表单格式（multipart/form-data），不能用 JSON 提交
+      // 后端用 Form(...) / File(...) 接收，必须使用 multipart/form-data 表单；
+      // company_name 和 file 只能二选一，不能同时提交。
       const form = new FormData();
-      form.append('company_name', name);
+      if (file) {
+        form.append('file', file);
+      } else {
+        form.append('company_name', name);
+      }
 
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -127,14 +185,14 @@ export default function App() {
         signal: controller.signal,
       });
 
+      // 有些网关（例如 413 请求体过大）会直接返回 HTML，这里解析失败时当作没有 JSON
       const data = await response.json().catch(() => null);
 
       if (!response.ok || data?.status === 'error') {
         const detail =
-          data?.message ||
-          (typeof data?.detail === 'string' ? data.detail : '') ||
-          `请求失败（HTTP ${response.status}）`;
-        throw new Error(detail);
+          (typeof data?.message === 'string' ? data.message : '') ||
+          (typeof data?.detail === 'string' ? data.detail : '');
+        throw new Error(describeAnalyzeHttpError(response.status, detail));
       }
 
       if (!data?.report) {
@@ -145,13 +203,19 @@ export default function App() {
       const nextSummaryCards = normalizeSummaryCards(data.summary_cards);
       const nextCoreConclusion = normalizeCoreConclusion(data.core_conclusion);
 
+      // 文件模式没有公司名称输入框，用文件名（去掉后缀）作为报告标题和下载文件名
+      const displayName = file
+        ? file.name.replace(/\.[^.]+$/, '').trim() || file.name
+        : name;
+
+      setCompanyName(displayName);
       setReportText(report);
       setSummaryCards(nextSummaryCards);
       setCoreConclusion(nextCoreConclusion);
       setHistory((prev) =>
         [
           {
-            companyName: name,
+            companyName: displayName,
             reportText: report,
             timestamp: Date.now(),
             ...(nextSummaryCards.length > 0 ? { summaryCards: nextSummaryCards } : {}),
@@ -240,8 +304,12 @@ export default function App() {
         />
         <DiligenceModal
           open={showModal}
+          inputMode={inputMode}
+          onInputModeChange={handleInputModeChange}
           companyName={companyName}
           onCompanyNameChange={setCompanyName}
+          selectedFile={selectedFile}
+          onSelectFile={handleSelectFile}
           isLoading={isLoading}
           reportText={reportText}
           summaryCards={summaryCards}
