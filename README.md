@@ -6,7 +6,7 @@
 
 ## 🔗 在线体验
 
-- 前端 Demo: https://fin-dd.hyt849819389.workers.dev/
+- 前端 Demo: https://myfindd.top/
 - 后端 API: https://fin-dd.onrender.com/docs
 
 ## 🧠 核心亮点与架构设计
